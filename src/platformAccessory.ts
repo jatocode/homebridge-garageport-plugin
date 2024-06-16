@@ -112,7 +112,7 @@ export class GarageDoorOpener {
   }
 
   public printState(value:CharacteristicValue):string {
-    return value === 1 ? 'OPEN' : 'CLOSED';
+    return value === 0 ? 'OPEN' : 'CLOSED';
   }
 
 }
