@@ -66,7 +66,7 @@ export class GarageDoorOpener {
 
       this.platform.log.info('Updating state from websocket ', message);
       this.currentDoorState = state;
-      this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
+      // this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
     });
 
     socket.on('connect', () => {
@@ -84,7 +84,7 @@ export class GarageDoorOpener {
       mqtt.publish('benchpress/homebridge-garageport', new Date().toUTCString(), { qos: 1, retain: true });
       mqtt.subscribe(['garage/esp32/input/#', 'esp32garage'], (err) => {
         if (err) {
-          this.platform.log.debug('MQTT subscription failed');
+          this.platform.log.error('MQTT subscription failed');
         }
       });
     });
@@ -115,12 +115,12 @@ export class GarageDoorOpener {
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setCurrentDoorState(value: CharacteristicValue) {
-    this.platform.log.debug('handleSetCurrentDoorState ->', value);
+    this.platform.log.info('setCurrentDoorState ->', value);
     this.service.setCharacteristic(this.platform.Characteristic.CurrentDoorState, value);
   }
 
   async setTargetDoorState(value: CharacteristicValue) {
-    this.platform.log.debug('handleSetTargetDoorState ->', value);
+    this.platform.log.info('setTargetDoorState ->', value);
     this.service.setCharacteristic(this.platform.Characteristic.TargetDoorState, value);
 
     this.targetDoorState = value;
@@ -149,16 +149,17 @@ export class GarageDoorOpener {
   }
 
   async sendImpulseToMotor() {
-    this.platform.log.debug('websocket request to impulse motor. Publishing to mqtt');
-    this.mqtt.publish('garage/esp32/in', 'G', { qos: 0, retain: false });
+    this.platform.log.warn('websocket request to impulse motor. Publishing to mqtt');
+  //  this.mqtt.publish('garage/esp32/in', 'G', { qos: 0, retain: false });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async setObstruction(value: CharacteristicValue) {
-    this.platform.log.debug('Obstruction not implemented -> ', value);
+    // this.platform.log.debug('Obstruction not implemented -> ', value);
   }
 
   async getObstruction(): Promise<CharacteristicValue> {
-    this.platform.log.debug('Obstruction not implemented');
+    // this.platform.log.debug('Obstruction not implemented');
     return false;
   }
 
