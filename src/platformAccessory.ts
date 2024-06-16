@@ -1,7 +1,7 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 import { GaragePortHomebridgePlatform } from './platform.js';
 import mqttjs, { MqttClient } from 'mqtt';
-import { io, Socket } from 'socket.io-client';
+//import { io, Socket } from 'socket.io-client';
 
 /**
  * Platform Accessory
@@ -10,9 +10,9 @@ import { io, Socket } from 'socket.io-client';
  */
 export class GarageDoorOpener {
   private service: Service;
+  // private socket: Socket;
+  // private url:string;
   private mqtt: MqttClient;
-  private socket: Socket;
-  private url:string;
   private currentDoorState: CharacteristicValue;
   private targetDoorState: CharacteristicValue;
 
@@ -21,13 +21,18 @@ export class GarageDoorOpener {
     private readonly accessory: PlatformAccessory,
   ) {
 
-    this.mqtt = this.SetupMqtt();
-    this.socket = this.SetupSocketIO();
-    this.url = 'https://mqtt.taklamakan.se';
+    this.platform.log.debug('GarageDoorOpener starting');
+    // this.url = 'https://mqtt.taklamakan.se';
+
+    this.mqtt = this.setupMqtt();
+    // this.socket = this.SetupSocketIO();
 
     const characteristic = this.platform.Characteristic;
     this.currentDoorState = characteristic.CurrentDoorState.CLOSED;
     this.targetDoorState = this.currentDoorState;
+
+    this.platform.log.info('Doorstates:', this.currentDoorState, this.targetDoorState);
+    this.platform.log.debug('Openstate is:', characteristic.CurrentDoorState.OPEN);
 
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
@@ -51,35 +56,32 @@ export class GarageDoorOpener {
       .onSet(this.setCurrentDoorState.bind(this))
       .onGet(this.getCurrentDoorState.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.ObstructionDetected)
-      .onSet(this.setObstruction.bind(this))
-      .onGet(this.getObstruction.bind(this));
   }
 
-  private SetupSocketIO(): Socket {
-    const socket = io(this.url);
-    this.platform.log.debug('Trying to connected ' + this.url);
+  // private SetupSocketIO(): Socket {
+  //   const socket = io(this.url);
+  //   this.platform.log.debug('Trying to connect ' + this.url);
 
-    socket.on('status', (message) => {
-      this.platform.log.debug('Status: ', message);
-      const state = message.status.garage === 'open' ?
-        this.platform.Characteristic.CurrentDoorState.OPEN : this.platform.Characteristic.CurrentDoorState.CurrentDoorState.CLOSED;
+  //   socket.on('status', (message) => {
+  //     this.platform.log.debug('Status: ', message);
+  //     const state = message.status.garage === 'open' ?
+  //       this.platform.Characteristic.CurrentDoorState.OPEN : this.platform.Characteristic.CurrentDoorState.CurrentDoorState.CLOSED;
 
-      this.platform.log.info('Updating state from websocket ', message);
-      this.currentDoorState = state;
-      // this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
-    });
+  //     this.platform.log.info('Updating state from websocket ', message);
+  //     this.currentDoorState = state;
+  //     // this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
+  //   });
 
-    socket.on('connect', () => {
-      this.platform.log.debug('SocketIO connected to ' + this.url);
-    });
+  //   socket.on('connect', () => {
+  //     this.platform.log.warn('SocketIO connected to ' + this.url);
+  //   });
 
-    setInterval(() => socket.emit('status'), 1000);
+  //   setInterval(() => socket.emit('status'), 1000);
 
-    return socket;
-  }
+  //   return socket;
+  // }
 
-  private SetupMqtt(): MqttClient {
+  private setupMqtt(): MqttClient {
     const mqtt = mqttjs.connect('mqtt://benchpress.local');
     mqtt.on('connect', () => {
       mqtt.publish('benchpress/homebridge-garageport', new Date().toUTCString(), { qos: 1, retain: true });
@@ -100,10 +102,10 @@ export class GarageDoorOpener {
           input2: esp32state.input2 === '0',
         };
         const state = status.input2 ?
-          this.platform.Characteristic.CurrentDoorState.CLOSED : this.platform.Characteristic.CurrentDoorState.OPEN;
+          this.platform.Characteristic.CurrentDoorState.OPEN : this.platform.Characteristic.CurrentDoorState.CLOSED;
 
         this.currentDoorState = state;
-        this.platform.log.info('Updating state from mqtt ', message, status, state);
+        this.platform.log.debug('Updating state from mqtt ', status, state);
         this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
       }
     });
@@ -111,25 +113,17 @@ export class GarageDoorOpener {
     return mqtt;
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
   async setCurrentDoorState(value: CharacteristicValue) {
     this.platform.log.info('setCurrentDoorState ->', value);
-    this.service.setCharacteristic(this.platform.Characteristic.CurrentDoorState, value);
   }
 
   async setTargetDoorState(value: CharacteristicValue) {
     this.platform.log.info('setTargetDoorState ->', value);
-    this.service.setCharacteristic(this.platform.Characteristic.TargetDoorState, value);
 
     this.targetDoorState = value;
-    if (this.targetDoorState === this.platform.Characteristic.TargetDoorState.OPEN &&
-      this.currentDoorState === this.platform.Characteristic.CurrentDoorState.CLOSED) {
-      this.sendImpulseToMotor();
-    } else if (this.targetDoorState === this.platform.Characteristic.TargetDoorState.CLOSED &&
-      this.currentDoorState === this.platform.Characteristic.CurrentDoorState.OPEN) {
+    this.platform.log.debug('Target state is now:', this.targetDoorState);
+    this.platform.log.debug('Current state is:', this.currentDoorState);
+    if (this.currentDoorState !== this.targetDoorState) {
       this.sendImpulseToMotor();
     }
   }
@@ -151,17 +145,7 @@ export class GarageDoorOpener {
 
   async sendImpulseToMotor() {
     this.platform.log.warn('websocket request to impulse motor. Publishing to mqtt');
-  //  this.mqtt.publish('garage/esp32/in', 'G', { qos: 0, retain: false });
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async setObstruction(value: CharacteristicValue) {
-    // this.platform.log.debug('Obstruction not implemented -> ', value);
-  }
-
-  async getObstruction(): Promise<CharacteristicValue> {
-    // this.platform.log.debug('Obstruction not implemented');
-    return false;
+    this.mqtt.publish('garage/esp32/in', 'G', { qos: 0, retain: false });
   }
 
 }
