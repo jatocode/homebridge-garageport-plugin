@@ -58,6 +58,7 @@ export class GarageDoorOpener {
 
   private SetupSocketIO(): Socket {
     const socket = io(this.url);
+    this.platform.log.debug('Trying to connected ' + this.url);
 
     socket.on('status', (message) => {
       this.platform.log.debug('Status: ', message);
@@ -70,7 +71,7 @@ export class GarageDoorOpener {
     });
 
     socket.on('connect', () => {
-      this.platform.log.debug('SocketOI Connected to ' + this.url);
+      this.platform.log.debug('SocketIO connected to ' + this.url);
     });
 
     setInterval(() => socket.emit('status'), 1000);
@@ -101,8 +102,8 @@ export class GarageDoorOpener {
         const state = status.input2 ?
           this.platform.Characteristic.CurrentDoorState.CLOSED : this.platform.Characteristic.CurrentDoorState.OPEN;
 
-        this.platform.log.info('Updating state from mqtt ', status);
         this.currentDoorState = state;
+        this.platform.log.info('Updating state from mqtt ', message, status, state);
         this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
       }
     });
