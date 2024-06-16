@@ -67,7 +67,7 @@ export class GaragePortHomebridgePlatform implements DynamicPlatformPlugin {
       {
         uniqueId: 'turessons19',
         displayName: 'Garageport',
-      }
+      },
       // {
       //   uniqueId: 'EFGH',
       //   displayName: 'Innerdörr',

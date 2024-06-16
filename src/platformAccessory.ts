@@ -1,6 +1,7 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
-
 import { GaragePortHomebridgePlatform } from './platform.js';
+import mqttjs, { MqttClient } from 'mqtt';
+import { io, Socket } from 'socket.io-client';
 
 /**
  * Platform Accessory
@@ -9,20 +10,24 @@ import { GaragePortHomebridgePlatform } from './platform.js';
  */
 export class GarageDoorOpener {
   private service: Service;
-
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  };
+  private mqtt: MqttClient;
+  private socket: Socket;
+  private url:string;
+  private currentDoorState: CharacteristicValue;
+  private targetDoorState: CharacteristicValue;
 
   constructor(
     private readonly platform: GaragePortHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+
+    this.mqtt = this.SetupMqtt();
+    this.socket = this.SetupSocketIO();
+    this.url = 'https://mqtt.taklamakan.se';
+
+    const characteristic = this.platform.Characteristic;
+    this.currentDoorState = characteristic.CurrentDoorState.CLOSED;
+    this.targetDoorState = this.currentDoorState;
 
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
@@ -51,49 +56,101 @@ export class GarageDoorOpener {
       .onGet(this.getObstruction.bind(this));
   }
 
+  private SetupSocketIO(): Socket {
+    const socket = io(this.url);
+
+    socket.on('status', (message) => {
+      this.platform.log.debug('Status: ', message);
+      const state = message.status.garage === 'open' ?
+        this.platform.Characteristic.CurrentDoorState.OPEN : this.platform.Characteristic.CurrentDoorState.CurrentDoorState.CLOSED;
+
+      this.platform.log.info('Updating state from websocket ', message);
+      this.currentDoorState = state;
+      this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
+    });
+
+    socket.on('connect', () => {
+      this.platform.log.debug('SocketOI Connected to ' + this.url);
+    });
+
+    setInterval(() => socket.emit('status'), 1000);
+
+    return socket;
+  }
+
+  private SetupMqtt(): MqttClient {
+    const mqtt = mqttjs.connect('mqtt://benchpress.local');
+    mqtt.on('connect', () => {
+      mqtt.publish('benchpress/homebridge-garageport', new Date().toUTCString(), { qos: 1, retain: true });
+      mqtt.subscribe(['garage/esp32/input/#', 'esp32garage'], (err) => {
+        if (err) {
+          this.platform.log.debug('MQTT subscription failed');
+        }
+      });
+    });
+
+    mqtt.on('message', async (topic, message) => {
+      if (topic.startsWith('esp32garage')) {
+        const esp32state = JSON.parse(message.toString());
+        const status = {
+          relayA: esp32state.relayA === '0',
+          relayB: esp32state.relayB === '0',
+          input1: esp32state.input1 === '0',
+          input2: esp32state.input2 === '0',
+        };
+        const state = status.input2 ?
+          this.platform.Characteristic.CurrentDoorState.CLOSED : this.platform.Characteristic.CurrentDoorState.OPEN;
+
+        this.platform.log.info('Updating state from mqtt ', status);
+        this.currentDoorState = state;
+        this.service.updateCharacteristic(this.platform.Characteristic.CurrentDoorState, state);
+      }
+    });
+
+    return mqtt;
+  }
+
   /**
    * Handle "SET" requests from HomeKit
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setCurrentDoorState(value: CharacteristicValue) {
     this.platform.log.debug('handleSetCurrentDoorState ->', value);
+    this.service.setCharacteristic(this.platform.Characteristic.CurrentDoorState, value);
   }
 
   async setTargetDoorState(value: CharacteristicValue) {
     this.platform.log.debug('handleSetTargetDoorState ->', value);
+    this.service.setCharacteristic(this.platform.Characteristic.TargetDoorState, value);
+
+    this.targetDoorState = value;
+    if (this.targetDoorState === this.platform.Characteristic.TargetDoorState.OPEN &&
+      this.currentDoorState === this.platform.Characteristic.CurrentDoorState.CLOSED) {
+      this.sendImpulseToMotor();
+    } else if (this.targetDoorState === this.platform.Characteristic.TargetDoorState.CLOSED &&
+      this.currentDoorState === this.platform.Characteristic.CurrentDoorState.OPEN) {
+      this.sendImpulseToMotor();
+    }
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possible. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
   async getCurrentDoorState(): Promise<CharacteristicValue> {
-    const state = this.exampleStates.On;
-
+    const state = this.currentDoorState;
     this.platform.log.debug('getCurrentDoorState ->', state);
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     return state;
   }
 
   async getTargetDoorState(): Promise<CharacteristicValue> {
-    const state = this.exampleStates.On;
-
+    const state = this.targetDoorState;
     this.platform.log.debug('getTargetDoorState ->', state);
 
     // if you need to return an error to show the device as "Not Responding" in the Home app:
     // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     return state;
+  }
+
+  async sendImpulseToMotor() {
+    this.platform.log.debug('websocket request to impulse motor. Publishing to mqtt');
+    this.mqtt.publish('garage/esp32/in', 'G', { qos: 0, retain: false });
   }
 
   async setObstruction(value: CharacteristicValue) {

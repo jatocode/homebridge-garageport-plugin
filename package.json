@@ -37,5 +37,9 @@
     "rimraf": "^5.0.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "mqtt": "^5.7.0",
+    "socket.io-client": "^4.7.5"
   }
 }
