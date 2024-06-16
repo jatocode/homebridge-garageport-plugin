@@ -39,7 +39,6 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "mqtt": "^5.7.0",
-    "socket.io-client": "^4.7.5"
+    "mqtt": "^5.7.0"
   }
 }
