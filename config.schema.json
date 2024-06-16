@@ -6,8 +6,8 @@
     "type": "object",
     "properties": {
       "name": {
-        "title": "Name",
-        "type": "string",
+        "title": "Garageport",
+        "type": "GarageDoorOpener",
         "required": true,
         "default": "Example Dynamic Platform"
       }
